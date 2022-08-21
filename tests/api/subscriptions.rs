@@ -1,4 +1,8 @@
 use sqlx::{Connection, PgConnection};
+use wiremock::{
+    matchers::{method, path},
+    Mock, ResponseTemplate,
+};
 use zero2prod::configuration::get_configuration;
 
 use crate::helpers::spawn_app;
@@ -12,6 +16,13 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .expect("Failed to connect to Postgres.");
 
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
     let response = app.post_subscriptions(body.into()).await;
 
     assert_eq!(200, response.status().as_u16());
@@ -61,4 +72,19 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
             error_message
         );
     }
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_for_valid_data() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
 }
